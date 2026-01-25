@@ -75,19 +75,19 @@ def run_symplectic_shared(S, d, num_samples, eta):
                 ops.Vacuum() | q[i]
 
             if eta is not None:
-                ops.Dgate(eta, 0 if mode < num_modes else np.pi / 2) | q[mode % num_modes]
+                ops.Dgate(eta / 2, 0 if mode < num_modes else np.pi / 2) | q[mode % num_modes]
 
             ops.GaussianTransform(S) | q
             for i in range(num_modes):
                 x_disp = d[i]
                 p_disp = d[i + num_modes]
                 alpha = x_disp + 1j * p_disp
-                ops.Dgate(abs(alpha), cmath.phase(alpha)) | q[i]
+                ops.Dgate(abs(alpha) / 2, cmath.phase(alpha)) | q[i]
 
             for i in range(num_modes):
                 ops.MeasureHeterodyne() | q[i]
         R = eng.run(prog).samples[0]
-        R = np.concat((np.real(R), np.imag(R)))
+        R = 2 * np.concat((np.real(R), np.imag(R)))
         return R
 
     # The operation MeasureHD has not been implemented in GaussianBackend for the arguments {'shots': 100}.
@@ -119,19 +119,19 @@ def run_symplectic_symmetric(S, d, num_samples, eta):
             for i in range(num_modes):
                 ops.Vacuum() | q[i]
 
-            ops.Dgate(eta, 0 if mode < num_modes else np.pi / 2) | q[mode % num_modes]
+            ops.Dgate(eta / 2, 0 if mode < num_modes else np.pi / 2) | q[mode % num_modes]
 
             ops.GaussianTransform(S) | q
             for i in range(num_modes):
                 x_disp = d[i]
                 p_disp = d[i + num_modes]
                 alpha = x_disp + 1j * p_disp
-                ops.Dgate(abs(alpha), cmath.phase(alpha)) | q[i]
+                ops.Dgate(abs(alpha) / 2, cmath.phase(alpha)) | q[i]
 
             for i in range(num_modes):
                 ops.MeasureHeterodyne() | q[i]
         R = eng.run(prog).samples[0]
-        R = np.concat((np.real(R), np.imag(R)))
+        R = 2 * np.concat((np.real(R), np.imag(R)))
         return R
 
     est_S = []
@@ -179,12 +179,12 @@ def run_displacement_aux(S, d, num_samples, nu, est_S=None):
                 x_disp = d[i]
                 p_disp = d[i + num_modes]
                 alpha = x_disp + 1j * p_disp
-                ops.Dgate(abs(alpha), cmath.phase(alpha)) | q[i]
+                ops.Dgate(abs(alpha) / 2, cmath.phase(alpha)) | q[i]
             ops.GaussianTransform(np.linalg.inv(Snu)) | q
             for i in range(num_modes):
                 ops.MeasureHeterodyne() | q[i]
         R = eng.run(prog).samples[0]
-        R = np.concat((np.real(R), np.imag(R)))
+        R = 2 * np.concat((np.real(R), np.imag(R)))
         return R
 
     est_d = np.zeros_like(d)
@@ -215,7 +215,7 @@ def run_displacement_sq(S, d, num_samples, z, est_S=None):
                 x_disp = d[i]
                 p_disp = d[i + num_modes]
                 alpha = x_disp + 1j * p_disp
-                ops.Dgate(abs(alpha), cmath.phase(alpha)) | q[i]
+                ops.Dgate(abs(alpha) / 2, cmath.phase(alpha)) | q[i]
 
             for i in range(num_modes):
                 H | q[i]
