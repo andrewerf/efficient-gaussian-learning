@@ -35,33 +35,16 @@ def assert_symplectic(S):
     d = np.linalg.matrix_norm(symplectic_check - Omega, ord='fro')
     assert np.allclose(symplectic_check, Omega), f'Omega L2-distance: {d}'
 
-# doesn't work?
+# Un grand merci à Émilie
 def symplectic_correction(S):
     num_modes = S.shape[0] // 2
     Omega = np.block([[np.zeros((num_modes, num_modes)), np.eye(num_modes)],
                       [-np.eye(num_modes), np.zeros((num_modes, num_modes))]])
-
     T = -Omega @ S.T @ Omega @ S
-
-    # Proposition 4.2
-    assert np.linalg.matrix_norm(T - np.eye(T.shape[0]), ord=np.inf) < 1
-
-    # vals, vecs = np.linalg.eig(T)
-    # assert vals.shape[0] == T.shape[0]
-    # vals = vals.real
-    # Q = vecs @ np.diag(np.sqrt(vals)) @ np.linalg.inv(vecs)
     Q = sc.linalg.sqrtm(T)
-
-    assert np.all(np.real(Q) == Q)
-    assert np.allclose(Q @ Q, T)
-    assert np.allclose(Omega @ Q @ np.linalg.inv(Omega), T.T)
-    # assert np.allclose(Q.T @ Q, T)
-
-    R = np.linalg.inv(Q) @ S
+    R =  S @ np.linalg.inv(Q)
     assert_symplectic(R)
     return R
-
-
 
 
 def run_symplectic_shared(S, d, num_samples, eta):
@@ -103,8 +86,7 @@ def run_symplectic_shared(S, d, num_samples, eta):
 
     est_S = est_S / num_samples
 
-    # doesn't work?
-    # est_S = symplectic_correction(est_S)
+    est_S = symplectic_correction(est_S)
 
     return est_S
 
@@ -146,8 +128,7 @@ def run_symplectic_symmetric(S, d, num_samples, eta):
 
     est_S = np.asarray(est_S).T
 
-    # doesn't work?
-    # est_S = symplectic_correction(est_S)
+    est_S = symplectic_correction(est_S)
 
     return est_S
 
