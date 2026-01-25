@@ -207,7 +207,7 @@ def run_displacement_sq(S, d, num_samples, z, est_S=None):
     def run(V, H):
         prog = sf.Program(num_modes)
         with prog.context as q:
-            ops.Gaussian(V) | q
+            ops.Gaussian(V, decomp=False) | q
             ops.GaussianTransform(np.linalg.inv(est_S)) | q
 
             ops.GaussianTransform(S) | q
@@ -237,18 +237,19 @@ def main():
     num_modes = 2
     np.random.seed(123)
     S = random_symplectic(num_modes)
-    d = np.random.randn(2 * num_modes)
+    d = np.random.randn(2 * num_modes) * 1000
+    sq = 1000
 
-    pred_S = run_symplectic_symmetric(S, d, 100, 100)
+    pred_S = run_symplectic_symmetric(S, d, 100, sq)
     print(f'Symplectic Symmetric Estimator: {np.linalg.matrix_norm(S - pred_S, ord="fro")}')
 
-    pred_S = run_symplectic_shared(S, d, 100, 100)
+    pred_S = run_symplectic_shared(S, d, 100, sq)
     print(f'Symplectic Shared Estimator: {np.linalg.matrix_norm(S - pred_S, ord="fro")}')
 
-    pred_d = run_displacement_aux(S, d, 100, 100)
+    pred_d = run_displacement_aux(S, d, 100, sq)
     print(f'Displacement Aux Estimator: {np.linalg.norm(pred_d - d)}')
 
-    pred_d = run_displacement_sq(S, d, 100, 100)
+    pred_d = run_displacement_sq(S, d, 100, sq)
     print(f'Displacement Singlemode-Squeezed Estimator: {np.linalg.norm(pred_d - d)}')
 
 if __name__ == "__main__":
