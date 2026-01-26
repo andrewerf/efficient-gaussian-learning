@@ -51,3 +51,13 @@ class GaussianSimulator:
         mean = self._r[idx]
         cov = self._sigma[np.ix_(idx, idx)] / 2
         return multivariate_normal.rvs(mean=mean, cov=cov, size=num_samples)
+
+
+def xpxp_to_xxpp(s):
+    n = s.shape[0]
+    indices = np.arange(n)
+    indices[:n // 2] = indices[::2]
+    indices[n // 2:] = indices[:n // 2] + 1
+    s = s[indices, :]
+    s = s[:, indices]
+    return s
