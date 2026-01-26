@@ -39,8 +39,8 @@ def coherent_probe(S, d, eta, mode, num_samples):
     num_modes = S.shape[0] // 2
     g = GaussianSimulator(num_modes)
     if eta is not None and mode is not None:
-        g.coherent_source(mode % num_modes, eta * (1 if mode < num_modes else 1j))
-    g.gaussian_unitary((S, d))
+        g.set_coherent(mode % num_modes, eta * (1 if mode < num_modes else 1j))
+    g.transform(S, d=d)
     return g.sample_heterodyne(num_samples=num_samples)
 
 
@@ -65,9 +65,9 @@ def squeezed_probe(est_S, S, d, z, quadrature, num_samples):
     num_modes = S.shape[0] // 2
     g = GaussianSimulator(num_modes)
     for i in range(num_modes):
-        g.squeezed_source(i, z)
-    g.gaussian_transform(np.linalg.inv(est_S))
-    g.gaussian_unitary((S, d))
+        g.set_squeezed_vacuum(i, z)
+    g.transform(np.linalg.inv(est_S))
+    g.transform(S, d=d)
     return g.sample_homodyne(quadrature, num_samples=num_samples)
 
 
@@ -90,10 +90,10 @@ def two_mode_squeezed_probe(est_S, S, d, nu, num_samples):
         [np.sqrt(nu - 1)*Z, np.sqrt(nu)*np.eye(num_modes*2)]
     ])
     Snu = xpxp_to_xxpp(Snu)
-    g.gaussian_transform(Snu)
-    g.gaussian_transform(np.linalg.inv(est_S), modes=range(num_modes))
-    g.gaussian_unitary((S, d), modes=range(num_modes))
-    g.gaussian_transform(np.linalg.inv(Snu))
+    g.transform(Snu)
+    g.transform(np.linalg.inv(est_S), modes=range(num_modes))
+    g.transform(S, d=d, modes=range(num_modes))
+    g.transform(np.linalg.inv(Snu))
     return g.sample_heterodyne(num_samples=num_samples, modes=range(num_modes))
 
 

@@ -8,12 +8,12 @@ class GaussianSimulator:
         self._sigma = np.eye(2 * self._num_modes)
         self._target_mode = None
 
-    def coherent_source(self, i, alpha):
+    def set_coherent(self, i, alpha):
         alpha = complex(alpha)
         self._r[i] = alpha.real
         self._r[i + self._num_modes] = alpha.imag
 
-    def squeezed_source(self, i, z):
+    def set_squeezed_vacuum(self, i, z):
         self._sigma[i, i] = z
         self._sigma[i + self._num_modes, i + self._num_modes] = 1 / z
 
@@ -23,15 +23,9 @@ class GaussianSimulator:
         modes = np.atleast_1d(modes)
         return np.concatenate([modes, modes + self._num_modes])
 
-    def gaussian_transform(self, S, modes=None):
-        idx = self._get_indices(modes)
-        if S.shape != (len(idx), len(idx)):
-            raise ValueError(f"S must be of shape ({len(idx)}, {len(idx)})")
-        self._sigma[np.ix_(idx, idx)] = S @ self._sigma[np.ix_(idx, idx)] @ S.T
-        self._r[idx] = S @ self._r[idx]
-
-    def gaussian_unitary(self, decomposed_unitary, modes=None):
-        S, d = decomposed_unitary
+    def transform(self, S, d=None, modes=None):
+        if d is None:
+            d = np.zeros((S.shape[0], ))
         idx = self._get_indices(modes)
         if S.shape != (len(idx), len(idx)) or d.shape != (len(idx),):
             raise ValueError("Dimensions of S or d do not match the number of modes.")
