@@ -1,30 +1,17 @@
-import scipy.linalg
-import strawberryfields as sf
-from strawberryfields import ops
 import numpy as np
 import scipy as sc
-import cmath
 from scipy.stats import unitary_group
 from scipy.linalg import block_diag
 
+from baby_gauss import GaussianSimulator
 
 def random_symplectic(n):
     U = unitary_group.rvs(n)
-
     X = U.real
     Y = U.imag
-
     S = np.block([[X, -Y], [Y, X]])
     assert_symplectic(S)
-
     return S
-
-def symplectic_xp2xx(n):
-    R = np.zeros((2*n, 2*n))
-    for i in range(n):
-        R[i, 2*i] = 1
-        R[n + i, 2*i + 1] = 1
-    return R
 
 
 def assert_symplectic(S):
@@ -34,6 +21,7 @@ def assert_symplectic(S):
     symplectic_check = S.T @ Omega @ S
     d = np.linalg.matrix_norm(symplectic_check - Omega, ord='fro')
     assert np.allclose(symplectic_check, Omega), f'Omega L2-distance: {d}'
+
 
 # Un grand merci à Émilie
 def symplectic_correction(S):
@@ -47,171 +35,78 @@ def symplectic_correction(S):
     return R
 
 
-def run_symplectic_shared(S, d, num_samples, eta):
+def coherent_probe(S, d, eta, mode, num_samples):
     num_modes = S.shape[0] // 2
-    eng = sf.Engine("gaussian")
-
-    def run(eta, mode):
-        prog = sf.Program(num_modes)
-        with prog.context as q:
-            for i in range(num_modes):
-                ops.Vacuum() | q[i]
-
-            if eta is not None:
-                ops.Dgate(eta / 2, 0 if mode < num_modes else np.pi / 2) | q[mode % num_modes]
-
-            ops.GaussianTransform(S) | q
-            for i in range(num_modes):
-                x_disp = d[i]
-                p_disp = d[i + num_modes]
-                alpha = x_disp + 1j * p_disp
-                ops.Dgate(abs(alpha) / 2, cmath.phase(alpha)) | q[i]
-
-            for i in range(num_modes):
-                ops.MeasureHeterodyne() | q[i]
-        R = eng.run(prog).samples[0]
-        R = 2 * np.concat((np.real(R), np.imag(R)))
-        return R
-
-    # The operation MeasureHD has not been implemented in GaussianBackend for the arguments {'shots': 100}.
-    # Therefore, using hand-crafted samples loop
-    est_S = np.zeros_like(S)
-    for k in range(num_samples):
-        Y0 = run(None, None)
-        SS = []
-        for j in range(num_modes*2):
-            Yj = run(eta, j)
-            SS.append((Yj - Y0) / eta)
-        est_S = est_S + np.asarray(SS).T
-
-    est_S = est_S / num_samples
-
-    est_S = symplectic_correction(est_S)
-
-    return est_S
+    g = GaussianSimulator(num_modes)
+    if eta is not None and mode is not None:
+        g.coherent_source(mode % num_modes, eta * (1 if mode < num_modes else 1j))
+    g.gaussian_unitary((S, d))
+    return g.sample_heterodyne(num_samples=num_samples)
 
 
-def run_symplectic_symmetric(S, d, num_samples, eta):
+def run_symplectic(S, d, num_samples, eta, kind):
     num_modes = S.shape[0] // 2
-    eng = sf.Engine("gaussian")
+    est_S = np.zeros((num_modes * 2, num_modes * 2))
+    scale = 1 if kind == "shared" else 0.5
+    if kind == "shared":
+        y_vacuum = np.mean(coherent_probe(S, d, None, None, num_samples), axis=0)
 
-    def run(eta, mode):
-        prog = sf.Program(num_modes)
-        with prog.context as q:
-            for i in range(num_modes):
-                ops.Vacuum() | q[i]
-
-            ops.Dgate(eta / 2, 0 if mode < num_modes else np.pi / 2) | q[mode % num_modes]
-
-            ops.GaussianTransform(S) | q
-            for i in range(num_modes):
-                x_disp = d[i]
-                p_disp = d[i + num_modes]
-                alpha = x_disp + 1j * p_disp
-                ops.Dgate(abs(alpha) / 2, cmath.phase(alpha)) | q[i]
-
-            for i in range(num_modes):
-                ops.MeasureHeterodyne() | q[i]
-        R = eng.run(prog).samples[0]
-        R = 2 * np.concat((np.real(R), np.imag(R)))
-        return R
-
-    est_S = []
-    for j in range(num_modes*2):
-        Y_plus = np.zeros_like(d)
-        Y_minus = np.zeros_like(d)
-        for k in range(num_samples):
-            Y_plus += run(eta, j)
-            Y_minus += run(-eta, j)
-
-        est_S.append((Y_plus - Y_minus) / (num_samples * 2 * eta))
-
-    est_S = np.asarray(est_S).T
-
-    est_S = symplectic_correction(est_S)
-
-    return est_S
+    for i in range(num_modes * 2):
+        y = coherent_probe(S, d, eta, i, num_samples)
+        if kind == "symmetric":
+            y -= coherent_probe(S, d, -eta, i, num_samples)
+        else:
+            y -= y_vacuum
+        est_S[:, i] = np.mean(y, axis=0) / eta * scale
+    return symplectic_correction(est_S)
 
 
-def run_displacement_aux(S, d, num_samples, nu, est_S=None):
-    if est_S is None:
-        est_S = S
+def squeezed_probe(est_S, S, d, z, quadrature, num_samples):
     num_modes = S.shape[0] // 2
-    eng = sf.Engine("gaussian")
+    g = GaussianSimulator(num_modes)
+    for i in range(num_modes):
+        g.squeezed_source(i, z)
+    g.gaussian_transform(np.linalg.inv(est_S))
+    g.gaussian_unitary((S, d))
+    return g.sample_homodyne(quadrature, num_samples=num_samples)
+
+
+def two_mode_squeezed_probe(est_S, S, d, nu, num_samples):
+    num_modes = S.shape[0] // 2
+    g = GaussianSimulator(num_modes * 2)
+
+    def xpxp_to_xxpp(s):
+        n = s.shape[0]
+        indices = np.arange(n)
+        indices[:n // 2] = indices[::2]
+        indices[n // 2:] = indices[:n // 2] + 1
+        s = s[indices, :]
+        s = s[:, indices]
+        return s
 
     Z = block_diag(*[[[1, 0], [0, -1]] for i in range(num_modes)])
     Snu = np.block([
         [np.sqrt(nu)*np.eye(num_modes*2), np.sqrt(nu - 1)*Z],
         [np.sqrt(nu - 1)*Z, np.sqrt(nu)*np.eye(num_modes*2)]
     ])
-    R = symplectic_xp2xx(num_modes*2)
+    Snu = xpxp_to_xxpp(Snu)
+    g.gaussian_transform(Snu)
+    g.gaussian_transform(np.linalg.inv(est_S), modes=range(num_modes))
+    g.gaussian_unitary((S, d), modes=range(num_modes))
+    g.gaussian_transform(np.linalg.inv(Snu))
+    return g.sample_heterodyne(num_samples=num_samples, modes=range(num_modes))
 
-    # change ordering from x1 p1 x2 p2 ... to x1 x2 ... p1 p2 ...
-    Snu = R @ Snu @ R.T
-    assert_symplectic(Snu)
 
-    def run():
-        prog = sf.Program(num_modes*2)
-        with prog.context as q:
-            ops.GaussianTransform(Snu) | q
-            ops.GaussianTransform(np.linalg.inv(est_S)) | q[:num_modes]
-            ops.GaussianTransform(S) | q[:num_modes]
-            for i in range(num_modes):
-                x_disp = d[i]
-                p_disp = d[i + num_modes]
-                alpha = x_disp + 1j * p_disp
-                ops.Dgate(abs(alpha) / 2, cmath.phase(alpha)) | q[i]
-            ops.GaussianTransform(np.linalg.inv(Snu)) | q
-            for i in range(num_modes):
-                ops.MeasureHeterodyne() | q[i]
-        R = eng.run(prog).samples[0]
-        R = 2 * np.concat((np.real(R), np.imag(R)))
-        return R
-
-    est_d = np.zeros_like(d)
-    for i in range(num_samples):
-        est_d += run()
-
-    est_d = est_d / (num_samples * np.sqrt(nu))
-    return est_d
-
-def run_displacement_sq(S, d, num_samples, z, est_S=None):
+def run_displacement(S, d, num_samples, sqz_param, est_S=None, kind="two_mode"):
     if est_S is None:
         est_S = S
-    num_modes = S.shape[0] // 2
-    eng = sf.Engine("gaussian")
-
-    # momentum- and position-squeezed matrices
-    Vp = block_diag(z * np.eye(num_modes), (1/z) * np.eye(num_modes))
-    Vx = block_diag((1/z) * np.eye(num_modes), z * np.eye(num_modes))
-
-    def run(V, H):
-        prog = sf.Program(num_modes)
-        with prog.context as q:
-            ops.Gaussian(V, decomp=False) | q
-            ops.GaussianTransform(np.linalg.inv(est_S)) | q
-
-            ops.GaussianTransform(S) | q
-            for i in range(num_modes):
-                x_disp = d[i]
-                p_disp = d[i + num_modes]
-                alpha = x_disp + 1j * p_disp
-                ops.Dgate(abs(alpha) / 2, cmath.phase(alpha)) | q[i]
-
-            for i in range(num_modes):
-                H | q[i]
-        Y = eng.run(prog).samples[0]
-        return Y
-
-    est_d = np.zeros_like(d)
-    for i in range(num_samples):
-        Yx = run(Vx, ops.MeasureX)
-        Yp = run(Vp, ops.MeasureP)
-        est_d += np.concat((Yx, Yp), axis=0)
-
-    est_d = est_d / num_samples
-    return est_d
-
+    if kind == "two_mode":
+        Y = two_mode_squeezed_probe(est_S, S, d, sqz_param, num_samples).mean(axis=0)
+        return Y / np.sqrt(sqz_param)
+    else:
+        Yx = squeezed_probe(est_S, S, d, 1 / sqz_param, 'x', num_samples).mean(axis=0)
+        Yp = squeezed_probe(est_S, S, d, sqz_param, 'p', num_samples).mean(axis=0)
+        return np.concat((Yx, Yp))
 
 
 def main():
@@ -220,20 +115,19 @@ def main():
     S = random_symplectic(num_modes)
     d = np.random.randn(2 * num_modes) * 1000
     sq = 1000
+    num_samples = 1000
 
-    pred_S = run_symplectic_symmetric(S, d, 100, sq)
+    pred_S = run_symplectic(S, d, num_samples, sq, kind="symmetric")
     print(f'Symplectic Symmetric Estimator: {np.linalg.matrix_norm(S - pred_S, ord="fro")}')
 
-    pred_S = run_symplectic_shared(S, d, 100, sq)
+    pred_S = run_symplectic(S, d, num_samples, sq, kind="shared")
     print(f'Symplectic Shared Estimator: {np.linalg.matrix_norm(S - pred_S, ord="fro")}')
 
-    pred_d = run_displacement_aux(S, d, 100, sq)
+    pred_d = run_displacement(S, d, num_samples, sq, kind="two_mode")
     print(f'Displacement Aux Estimator: {np.linalg.norm(pred_d - d)}')
 
-    pred_d = run_displacement_sq(S, d, 100, sq)
+    pred_d = run_displacement(S, d, num_samples, sq, kind="single_mode")
     print(f'Displacement Singlemode-Squeezed Estimator: {np.linalg.norm(pred_d - d)}')
 
 if __name__ == "__main__":
     main()
-
-
