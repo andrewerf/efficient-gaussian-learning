@@ -51,7 +51,7 @@ def random_unitary(num_modes, r_scale=0, sqz_scale=1):
             z = np.random.rand() + 1j * np.random.rand()
             return z / abs(z)
         else:
-            unitary_group.rvs(num_modes)
+            return unitary_group.rvs(num_modes)
 
     o1 = U_to_S(ru())
 
