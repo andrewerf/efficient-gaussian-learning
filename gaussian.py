@@ -46,14 +46,21 @@ def random_unitary(num_modes, r_scale=0, sqz_scale=1):
         Y = U.imag
         return np.block([[X, -Y], [Y, X]])
 
-    o1 = U_to_S(unitary_group.rvs(num_modes))
+    def ru():
+        if num_modes == 1:
+            z = np.random.rand() + 1j * np.random.rand()
+            return z / abs(z)
+        else:
+            unitary_group.rvs(num_modes)
+
+    o1 = U_to_S(ru())
 
     if sqz_scale == 1:
         # Just a passive unitary
         S = o1
     else:
         # Euler decomposition
-        o2 = U_to_S(unitary_group.rvs(num_modes))
+        o2 = U_to_S(ru())
         sqz = np.exp(np.random.randn(num_modes) * np.log(sqz_scale))
         d = np.diag(np.concatenate([sqz, 1 / sqz]))
         S = o1 @ d @ o2
@@ -122,7 +129,7 @@ class GaussianState:
 
         mean = self.r[idx]
         cov = self.sigma[np.ix_(idx, idx)] / 2
-        return multivariate_normal.rvs(mean=mean, cov=cov, size=num_samples)
+        return multivariate_normal.rvs(mean=mean, cov=cov, size=num_samples).reshape(num_samples, self.num_modes)
 
     @property
     def mean_photon_number(self):

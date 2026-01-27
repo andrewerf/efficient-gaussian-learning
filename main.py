@@ -98,7 +98,7 @@ def estimate_displacement(U, num_samples, sqz_param, est_S=None, kind="two_mode"
     else:
         Yx = single_mode_squeezed_probe(est_S, U, 1 / sqz_param, "x", num_samples)
         Yp = single_mode_squeezed_probe(est_S, U, sqz_param, "p", num_samples)
-        return np.concat((Yx.mean(axis=0), Yp.mean(axis=0)))
+        return np.concatenate((Yx.mean(axis=0), Yp.mean(axis=0)))
 
 
 def main():
@@ -113,7 +113,7 @@ def main():
 
     def print_cmp(name, A, B):
         if len(A.shape) == 2:
-            d = np.linalg.matrix_norm(A - B, ord="fro")
+            d = np.linalg.norm(A - B, ord="fro")
         else:
             d = np.linalg.norm(A - B)
         print(f"{name}: {d}")
