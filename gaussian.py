@@ -47,12 +47,16 @@ def random_unitary(num_modes, r_scale=0, sqz_scale=1):
         return np.block([[X, -Y], [Y, X]])
 
     o1 = U_to_S(unitary_group.rvs(num_modes))
-    o2 = U_to_S(unitary_group.rvs(num_modes))
 
-    sqz = np.exp(np.random.randn(num_modes) * np.log(sqz_scale))
-    d = np.diag(np.concatenate([sqz, 1 / sqz]))
-
-    S = o1 @ d @ o2
+    if sqz_scale == 1:
+        # Just a passive unitary
+        S = o1
+    else:
+        # Euler decomposition
+        o2 = U_to_S(unitary_group.rvs(num_modes))
+        sqz = np.exp(np.random.randn(num_modes) * np.log(sqz_scale))
+        d = np.diag(np.concatenate([sqz, 1 / sqz]))
+        S = o1 @ d @ o2
 
     r = np.random.randn(2 * num_modes) * r_scale
     return GaussianUnitary(S, r)
