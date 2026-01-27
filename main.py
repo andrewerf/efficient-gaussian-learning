@@ -41,7 +41,7 @@ def coherent_probe(U, eta, mode, num_samples):
 def estimate_symplectic(U, num_samples, eta, kind="symmetric"):
     if kind not in ["symmetric", "shared"]:
         raise ValueError("kind must be 'symmetric' or 'shared'")
-    num_modes = U.S.shape[0] // 2
+    num_modes = U.num_modes
     est_S = np.zeros((num_modes * 2, num_modes * 2))
     scale = 1 if kind == "shared" else 0.5
     if kind == "shared":
@@ -102,16 +102,13 @@ def estimate_displacement(U, num_samples, sqz_param, est_S=None, kind="two_mode"
 
 
 def main():
-    C = random_coherent_state(5, 100)
-    print(C)
-
     num_modes = 2
     np.random.seed(42)
 
-    U = random_unitary(num_modes, 100)
-    num_samples = 1000
-    eta = 100
-    sqz = 10
+    U = random_unitary(num_modes, 100, 10)
+    num_samples = 10000
+    eta = 10000
+    sqz = 100
 
     def print_cmp(name, A, B):
         if len(A.shape) == 2:
@@ -129,13 +126,13 @@ def main():
     est_d_sqz = estimate_displacement(
         U, num_samples, sqz, kind="single_mode", est_S=est_S_sym
     )
-    print_cmp("Displacement Singlemode-Squeezed Estimator", est_d_sqz, U.d)
+    print_cmp("Displacement Singlemode-Squeezed Estimator", est_d_sqz, U.r)
 
     # TODO(emilie): still fails to generate a symmetric p.s.d matrix sometimes
     est_d_tms = estimate_displacement(
         U, num_samples, sqz, kind="two_mode", est_S=est_S_sym
     )
-    print_cmp("Displacement Aux Estimator", est_d_tms, U.d)
+    print_cmp("Displacement Aux Estimator", est_d_tms, U.r)
 
     V = GaussianUnitary(est_S_sym, est_d_tms)
     print("ECD:", ec_diamond_norm(U, V, max_n=1e4, method="sampling"))

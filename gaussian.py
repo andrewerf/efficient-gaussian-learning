@@ -14,19 +14,18 @@ def check_symplectic(S):
         ]
     )
     symplectic_check = S.T @ Omega @ S
-    d = np.linalg.matrix_norm(symplectic_check - Omega, ord="fro")
-    return np.allclose(symplectic_check, Omega)
+    return np.allclose(symplectic_check, Omega, atol=1e-7)
 
 
 @dataclass
 class GaussianUnitary:
     S: np.ndarray
-    d: np.ndarray
+    r: np.ndarray
 
     def __post_init__(self):
         num_modes = self.S.shape[0] // 2
 
-        if self.S.shape != (num_modes * 2, num_modes * 2) or self.d.shape != (
+        if self.S.shape != (num_modes * 2, num_modes * 2) or self.r.shape != (
             2 * num_modes,
         ):
             raise ValueError("Invalid dimensions.")
@@ -36,18 +35,27 @@ class GaussianUnitary:
         self.num_modes = num_modes
 
     def apply(self, state: "GaussianState") -> "GaussianState":
-        new_r = self.S @ state.r + self.d
+        new_r = self.S @ state.r + self.r
         new_sigma = self.S @ state.sigma @ self.S.T
         return GaussianState(sigma=new_sigma, r=new_r)
 
 
-def random_unitary(num_modes, d_scale):
-    U = unitary_group.rvs(num_modes)
-    X = U.real
-    Y = U.imag
-    S = np.block([[X, -Y], [Y, X]])
-    d = np.random.randn(2 * num_modes) * d_scale
-    return GaussianUnitary(S, d)
+def random_unitary(num_modes, r_scale=0, sqz_scale=1):
+    def U_to_S(U):
+        X = U.real
+        Y = U.imag
+        return np.block([[X, -Y], [Y, X]])
+
+    o1 = U_to_S(unitary_group.rvs(num_modes))
+    o2 = U_to_S(unitary_group.rvs(num_modes))
+
+    sqz = np.exp(np.random.randn(num_modes) * np.log(sqz_scale))
+    d = np.diag(np.concatenate([sqz, 1 / sqz]))
+
+    S = o1 @ d @ o2
+
+    r = np.random.randn(2 * num_modes) * r_scale
+    return GaussianUnitary(S, r)
 
 
 class GaussianState:
@@ -83,14 +91,14 @@ class GaussianState:
 
     def transform(self, u, modes=None):
         if type(u) is np.ndarray:
-            S, d = u, np.zeros((u.shape[0],))
+            S, r = u, np.zeros((u.shape[0],))
         else:
-            S, d = u.S, u.d
+            S, r = u.S, u.r
         idx = self._get_indices(modes)
-        if S.shape != (len(idx), len(idx)) or d.shape != (len(idx),):
+        if S.shape != (len(idx), len(idx)) or r.shape != (len(idx),):
             raise ValueError("Dimensions of S or d do not match the number of modes.")
         self.sigma[np.ix_(idx, idx)] = S @ self.sigma[np.ix_(idx, idx)] @ S.T
-        self.r[idx] = S @ self.r[idx] + d
+        self.r[idx] = S @ self.r[idx] + r
 
     def sample_heterodyne(self, modes=None, num_samples=1):
         idx = self._get_indices(modes)
@@ -130,12 +138,14 @@ def xpxp_to_xxpp(s):
 
 
 def overlap(psi_1: GaussianState, psi_2: GaussianState):
+    if not psi_1.num_modes == psi_2.num_modes:
+        raise ValueError("Incompatible sizes.")
     Sigma = psi_1.sigma + psi_2.sigma
-    num_modes = psi_1.sigma.shape[0] // 2
+    num_modes = psi_1.num_modes
     try:
         c, lower = sp.linalg.cho_factor(Sigma, check_finite=True)
     except np.linalg.LinAlgError as e:
-        raise LinAlgError("Sigma matrix must be positive definite") from e
+        raise ValueError("Sigma matrix must be positive definite") from e
 
     d = psi_1.r - psi_2.r
     inv_Sigma_d = sp.linalg.cho_solve((c, lower), d, check_finite=True)
@@ -153,15 +163,18 @@ def random_coherent_state(num_modes, target_mean_photon_number):
     return state
 
 
-def random_state(num_modes, target_mean_photon_number):
+def random_state(num_modes, target_mean_photon_number, r_scale=10, sqz_scale=1):
     # Start by applying a random unitary to a vacuum state
-    state = random_unitary(num_modes, 10).apply(GaussianState(num_modes))
+    state = random_unitary(num_modes, r_scale, sqz_scale).apply(
+        GaussianState(num_modes)
+    )
 
     # Kind of hack-ish NLA to reach the target photon number
     g = np.sqrt(target_mean_photon_number / state.mean_photon_number)
     r = g * state.r
-    sigma = (g**2 * state.sigma) - ((g**2 - 1) * np.eye(2 * state.num_modes))
-    return GaussianState(sigma=sigma, r=r)
+    if sqz_scale == 1:
+        sigma = (g**2 * state.sigma) - ((g**2 - 1) * np.eye(2 * state.num_modes))
+    return GaussianState(sigma=state.sigma, r=r)
 
 
 def ec_diamond_norm(
@@ -178,7 +191,7 @@ def ec_diamond_norm(
     if method == "sampling":
         # Evaluate the overlap on randomly generated coherent and random gaussian states
         c_states = [random_coherent_state(num_modes, max_n) for _ in range(num_samples)]
-        r_states = [random_state(num_modes, max_n) for _ in range(num_samples)]
+        r_states = [random_state(num_modes, max_n, 10, 10) for _ in range(num_samples)]
         r_states = [r for r in r_states if r.mean_photon_number <= max_n]
         return np.max([_ecd_overlap(U, V, state) for state in c_states + r_states])
     else:
