@@ -182,6 +182,7 @@ def ec_diamond_norm(
     V: GaussianUnitary,
     max_n=10_000,
     num_samples=1_000,
+    sqz_scale=10,
     method="sampling",
 ):
     def _ecd_overlap(U: GaussianUnitary, V: GaussianUnitary, psi: GaussianState):
@@ -191,7 +192,9 @@ def ec_diamond_norm(
     if method == "sampling":
         # Evaluate the overlap on randomly generated coherent and random gaussian states
         c_states = [random_coherent_state(num_modes, max_n) for _ in range(num_samples)]
-        r_states = [random_state(num_modes, max_n, 10, 10) for _ in range(num_samples)]
+        r_states = [
+            random_state(num_modes, max_n, 10, sqz_scale) for _ in range(num_samples)
+        ]
         r_states = [r for r in r_states if r.mean_photon_number <= max_n]
         return np.max([_ecd_overlap(U, V, state) for state in c_states + r_states])
     else:

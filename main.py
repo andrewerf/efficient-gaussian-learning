@@ -105,10 +105,11 @@ def main():
     num_modes = 2
     np.random.seed(42)
 
-    U = random_unitary(num_modes, 100, 10)
-    num_samples = 10000
+    num_samples = 100000
     eta = 10000
-    sqz = 100
+    sqz = 10
+
+    U = random_unitary(num_modes, 100, sqz)
 
     def print_cmp(name, A, B):
         if len(A.shape) == 2:
@@ -135,7 +136,7 @@ def main():
     print_cmp("Displacement Aux Estimator", est_d_tms, U.r)
 
     V = GaussianUnitary(est_S_sym, est_d_tms)
-    print("ECD:", ec_diamond_norm(U, V, max_n=1e4, method="sampling"))
+    print("ECD:", ec_diamond_norm(U, V, max_n=1e4, method="sampling", sqz_scale=sqz))
 
 
 if __name__ == "__main__":
