@@ -39,6 +39,21 @@ class GaussianUnitary:
         new_sigma = self.S @ state.sigma @ self.S.T
         return GaussianState(sigma=new_sigma, r=new_r)
 
+    def fock(self, cutoff: int) -> np.ndarray:
+        from mrmustard.lab.gates import Ggate, Dgate
+        U1 = Dgate(self.r[::2], self.r[1::2]).U([cutoff]*self.num_modes)
+        while len(U1.shape) > 2:
+            U1 = U1.reshape(-1, *U1.shape[2:])
+            U1 = U1.reshape(U1.shape[0], -1)
+
+        U2 = Ggate(self.r.shape[0] // 2, self.S).U([cutoff]*self.num_modes)
+        while len(U2.shape) > 2:
+            U2 = U2.reshape(-1, *U2.shape[2:])
+            U2 = U2.reshape(U2.shape[0], -1)
+
+        return U1 @ U2
+
+
 
 def random_unitary(num_modes, r_scale=0, sqz_scale=1):
     def U_to_S(U):
