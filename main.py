@@ -442,5 +442,8 @@ if __name__ == "__main__":
     range_modes = range(2, 10, 2)
     range_queries = range(100, 1000, 100)
 
-    # symplectic_data = make_symplectic_data(range_modes, range_queries)
+    symplectic_data = make_symplectic_data(range_modes, range_queries)
+    pickle.dump(symplectic_data, open('symplectic_data.p', 'wb'))
+
     united_data = make_united_data(range_modes, range_queries)
+    pickle.dump(united_data, open('united_data.p', 'wb'))
