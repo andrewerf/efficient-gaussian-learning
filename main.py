@@ -1,6 +1,9 @@
+from dataclasses import dataclass
+
 import numpy as np
 import scipy as sc
 from scipy.linalg import block_diag
+import pickle
 
 from gaussian import (
     GaussianState,
@@ -139,5 +142,76 @@ def main():
     print("ECD:", ec_diamond_norm(U, V, max_n=1e4, method="sampling", sqz_scale=sqz))
 
 
+
+# Returns the lower bound for the number of samples Ns
+def get_samples_symplectic(kind: str, m: int, z: float, delta: float, tau: float, eta: float):
+    if kind == 'shared':
+        # Based on Proposition 4.4
+        return 324 * m * (z**6) * ( np.sqrt(2 * m) + np.sqrt(2 * np.log(2*m / delta)) )**2 / ( eta**2 * tau**2 )
+    elif kind == 'symmetric':
+        # Based on Proposition 4.5
+        return 81 * (z**6) * ( 2*np.sqrt(2*m) + np.sqrt(2*np.log(1 / delta)) )**2 / ( 2 * eta**2 * tau**2 )
+    else:
+        raise ValueError("kind must be 'shared' or 'symmetric'")
+
+
+def get_symplectic_estimation_errors(kind: str,  num_modes: int, max_squeezing: float, num_samples: int, delta: float, tau: float, eta: float):
+    errs = []
+    N = get_samples_symplectic(kind, num_modes, max_squeezing, delta, tau, eta)
+    N = int(np.ceil(N))
+    for i in range(num_samples):
+        U = random_unitary(num_modes, 10, max_squeezing)
+        est_S = estimate_symplectic(U, N, eta, kind=kind)
+        errs.append(np.linalg.norm(U.S - est_S, ord=2))
+    return N, np.asarray(errs)
+
+
+@dataclass
+class SymplecticEstimationPlotData:
+    kind: str
+    eta: float
+    num_modes: int
+    delta: float
+    tau: float
+    squeezing: float
+
+    N: int
+    errs: np.ndarray
+    
+def get_err_rate(d: SymplecticEstimationPlotData):
+    return np.mean(d.errs > d.tau)
+
+
+def make_symplectic_data() -> list[SymplecticEstimationPlotData]:
+    eta = 100
+    num_modes = 2
+    num_samples = 5000
+    delta = 0.1
+    tau = 0.1
+    max_squeezing = 3
+    squeezing_steps = 3
+
+    ret = []
+    for kind in ['symmetric', 'shared']:
+        for sq in np.arange(1, max_squeezing, max_squeezing / squeezing_steps):
+            N, errs = get_symplectic_estimation_errors(kind, num_modes, sq, num_samples, delta, tau, eta)
+            d = SymplecticEstimationPlotData(
+                kind=kind,
+                eta=eta,
+                num_modes=num_modes,
+                delta=delta,
+                tau=tau,
+                squeezing=sq,
+                N = N,
+                errs = errs,
+            )
+            err_rate = get_err_rate(d)
+            print(f'Kind: {kind}\t N: {N}\t err rate: {err_rate}')
+            ret.append(d)
+
+    return ret
+
+
 if __name__ == "__main__":
-    main()
+    symplectic_data = make_symplectic_data()
+    pickle.dump(symplectic_data, open("symplectic_data.pickle", "wb"))
