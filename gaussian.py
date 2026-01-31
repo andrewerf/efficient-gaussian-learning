@@ -76,7 +76,7 @@ def random_unitary(num_modes, r_scale=0, sqz_scale=1):
     else:
         # Euler decomposition
         o2 = U_to_S(ru())
-        sqz = np.exp(np.random.randn(num_modes) * np.log(sqz_scale))
+        sqz = np.exp(np.random.rand(num_modes) * np.log(sqz_scale))
         d = np.diag(np.concatenate([sqz, 1 / sqz]))
         S = o1 @ d @ o2
 
