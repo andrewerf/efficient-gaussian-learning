@@ -6,6 +6,7 @@ from scipy.linalg import block_diag
 import pickle
 import plotly.graph_objects as go
 import tikzplotly
+import pandas as pd
 from collections import defaultdict
 
 from gaussian import (
@@ -435,15 +436,82 @@ def create_histograms_by_parameter(data_list: list[SymplecticEstimationPlotData]
 
     return figures
 
+def plot_with_error_bars(df, target):
+    param_cols = [col for col in df.columns if col not in ['mean', 'std', target]]
+
+    fig = go.Figure()
+
+    if param_cols:
+        grouped = df.groupby(param_cols)
+
+        for params, group_df in grouped:
+            if len(param_cols) == 1:
+                label = f"{param_cols[0]}={params}"
+            else:
+                label = ", ".join([f"{col}={val}" for col, val in zip(param_cols, params)])
+
+            group_df = group_df.sort_values(target)
+
+            fig.add_trace(go.Scatter(
+                x=group_df[target],
+                y=group_df['mean'],
+                error_y=dict(
+                    type='data',
+                    array=group_df['std'],
+                    visible=True
+                ),
+                mode='lines+markers',
+                name=label
+            ))
+    else:
+        df_sorted = df.sort_values(target)
+        fig.add_trace(go.Scatter(
+            x=df_sorted[target],
+            y=df_sorted['mean'],
+            error_y=dict(
+                type='data',
+                array=df_sorted['std'],
+                visible=True
+            ),
+            mode='lines+markers',
+            name='Data'
+        ))
+
+    fig.update_layout(
+        title='Line Plot with Error Bars',
+        xaxis_title=target,
+        yaxis_title='Mean Error',
+        hovermode='closest',
+        template='plotly_white'
+    )
+
+    return fig
+
 def title2name(title: str) -> str:
     return str.replace(title, '/', '')
 
 if __name__ == "__main__":
-    range_modes = range(2, 10, 2)
-    range_queries = range(100, 1000, 100)
+    # range_modes = range(2, 10, 2)
+    # range_queries = range(100, 1000, 100)
+    #
+    # symplectic_data = make_symplectic_data(range_modes, range_queries)
+    # pickle.dump(symplectic_data, open('symplectic_data.p', 'wb'))
+    #
+    # united_data = make_united_data(range_modes, range_queries)
+    # pickle.dump(united_data, open('united_data.p', 'wb'))
 
-    symplectic_data = make_symplectic_data(range_modes, range_queries)
-    pickle.dump(symplectic_data, open('symplectic_data.p', 'wb'))
+    symplectic_data: list[SymplecticEstimationPlotData] = pickle.load(open('symplectic_data.p', 'rb'))
+    df = pd.DataFrame(symplectic_data)
 
-    united_data = make_united_data(range_modes, range_queries)
-    pickle.dump(united_data, open('united_data.p', 'wb'))
+    mean = df['errs'].map(lambda x: np.mean(x))
+    std = df['errs'].map(lambda x: np.std(x))
+
+    df = df.drop('errs', axis=1)
+    df.insert(len(df.columns), 'mean', mean)
+    df.insert(len(df.columns), 'std', std)
+    print(df.columns)
+    print(df)
+
+    df = df.drop('tau', axis=1)
+    fig = plot_with_error_bars(df.loc[(df['kind'] == 'symmetric')], 'N')
+    fig.show()
