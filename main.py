@@ -167,14 +167,23 @@ def get_err_symplectic(kind: str, m: int, z: float, delta: float, N: int, eta: f
 
 @dataclass
 class UnitedSamples:
-    Ns: float
-    Nr: float
+    Ns: int
+    Nr: int
+
+@dataclass
+class UnitedErrors:
+    eps_S: float
+    eps_r: float
 
 def get_samples_united(m: int, z: float, nu: float, eta: float, eps_S: float, eps_r: float, delta: float) -> UnitedSamples:
     Ns = get_samples_symplectic('shared', m, z, delta, eps_S, eta)
     Nr = (1 + 2*nu*z*eps_S + 6*(nu*z*eps_S)**2)*(np.sqrt(2*m) + np.sqrt(np.log(2 / delta)))**2 / (nu * eps_r**2)
-    return UnitedSamples(Ns, Nr)
+    return UnitedSamples(int(np.ceil(Ns)), int(np.ceil(Nr)))
 
+def get_errs_united(m: int, z: float, nu: float, eta: float, Ns: int, Nr: int, delta: float) -> UnitedErrors:
+    eps_S = get_err_symplectic('shared', m, z, delta, Ns, eta)
+    eps_r = np.sqrt((1 + 2*nu*z*eps_S + 6*(nu*z*eps_S)**2)*(np.sqrt(2*m) + np.sqrt(np.log(2 / delta)))**2 / (nu * Nr))
+    return UnitedErrors(eps_S, eps_r)
 
 
 def get_symplectic_estimation_errors(kind: str, num_modes: int, max_squeezing: float, num_samples: int,
@@ -195,21 +204,26 @@ def get_symplectic_estimation_errors(kind: str, num_modes: int, max_squeezing: f
     return N, tau, np.asarray(errs)
 
 
-def get_united_estimation_errors(num_modes: int, max_S_squeezing: float, num_samples: int, eps_S: float, eps_r: float, delta: float, nu: float, eta: float):
+def get_united_estimation_errors(num_modes: int, max_S_squeezing: float, num_samples: int,
+                                 united_samples: UnitedSamples | None, united_errors: UnitedErrors | None,
+                                 delta: float, nu: float, eta: float):
+    assert( ( united_samples is None ) != ( united_errors is None ) )
+
+    if united_errors is None:
+        united_errors = get_errs_united(num_modes, max_S_squeezing, nu, eta, united_samples.Ns, united_samples.Nr, delta)
+    else:
+        united_samples = get_samples_united(num_modes, max_S_squeezing, nu, eta, united_errors.eps_S, united_errors.eps_r, delta)
+
     errs_S, errs_r = [], []
-    N = get_samples_united(num_modes, max_S_squeezing, nu, eta, eps_S, eps_r, delta)
-    Ns = int(np.ceil(N.Ns))
-    Nr = int(np.ceil(N.Nr))
-    N = UnitedSamples(Ns, Nr)
     for i in range(num_samples):
         # > In what follows, we focus on the algorithm that combines the vacuum-shared input protocol from
         # > Section 4.1 with the two-mode squeezed vacuum protocol from Section 5.1
         U = random_unitary(num_modes, 10, max_S_squeezing)
-        est_S = estimate_symplectic(U, Ns, eta, kind='shared')
-        est_r = estimate_displacement(U, Nr, nu, est_S, 'two_mode')
+        est_S = estimate_symplectic(U, united_samples.Ns, eta, kind='shared')
+        est_r = estimate_displacement(U, united_samples.Nr, nu, est_S, 'two_mode')
         errs_S.append(np.linalg.norm(U.S - est_S, ord=2))
         errs_r.append(np.linalg.norm(U.r - est_r, ord=2))
-    return N, np.stack((errs_S, errs_r), axis=1)
+    return united_samples, united_errors, np.stack((errs_S, errs_r), axis=1)
 
 
 @dataclass
@@ -275,34 +289,32 @@ def get_united_err_rate(d: UnitedEstimationPlotData):
 
 
 
-def make_united_data() -> list[UnitedEstimationPlotData]:
-    eta = 100
-    num_modes = 2
+def make_united_data(range_modes, range_queries) -> list[UnitedEstimationPlotData]:
+    eta = 1000
     num_samples = 1000
     delta = 0.1
-    eps_S = 0.1
-    eps_r = 0.1
-    max_squeezing = 3
-    squeezing_step = 0.5
-    nu = 3
+    sq = 3
+    nu = 10
 
     ret = []
-    for sq in np.arange(1, max_squeezing, squeezing_step):
-        N, errs = get_united_estimation_errors(num_modes, sq, num_samples, eps_S, eps_r, delta, nu, eta)
-        d = UnitedEstimationPlotData(
-            num_modes=num_modes,
-            max_S_squeezing=sq,
-            nu=nu,
-            eta=eta,
-            eps_S=eps_S,
-            eps_r=eps_r,
-            delta=delta,
-            N = N,
-            errs = errs
-        )
-        err_rate = get_united_err_rate(d)
-        print(f'N: {N}\t err rate: {err_rate}')
-        ret.append(d)
+    for num_modes in range_modes:
+        for N in range_queries:
+            _, error_bounds, errs = get_united_estimation_errors(num_modes, sq, num_samples, UnitedSamples(N, N), None, delta, nu, eta)
+            d = UnitedEstimationPlotData(
+                num_modes=num_modes,
+                max_S_squeezing=sq,
+                nu=nu,
+                eta=eta,
+                eps_S=error_bounds.eps_S,
+                eps_r=error_bounds.eps_r,
+                delta=delta,
+                N = N,
+                errs = errs
+            )
+            mean_err_s = np.mean(errs[:, 0])
+            mean_err_r = np.mean(errs[:, 1])
+            print(f'N: {N}\t eps_S: {error_bounds.eps_S:.5f}\t eps_r: {error_bounds.eps_r:.5f}\t mean_err_S: {mean_err_s:.6f}\t mean_err_r: {mean_err_r:.6f}')
+            ret.append(d)
     return ret
 
 
@@ -427,5 +439,8 @@ def title2name(title: str) -> str:
     return str.replace(title, '/', '')
 
 if __name__ == "__main__":
-    symplectic_data = make_symplectic_data(range(2, 10, 2), range(100, 1000, 100))
+    range_modes = range(2, 10, 2)
+    range_queries = range(100, 1000, 100)
 
+    # symplectic_data = make_symplectic_data(range_modes, range_queries)
+    united_data = make_united_data(range_modes, range_queries)
