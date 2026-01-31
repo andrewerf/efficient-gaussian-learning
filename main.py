@@ -5,6 +5,7 @@ import scipy as sc
 from scipy.linalg import block_diag
 import pickle
 import plotly.graph_objects as go
+import tikzplotly
 from collections import defaultdict
 
 from gaussian import (
@@ -187,7 +188,7 @@ def get_err_rate(d: SymplecticEstimationPlotData):
 def make_symplectic_data() -> list[SymplecticEstimationPlotData]:
     eta = 100
     num_modes = 2
-    num_samples = 5000
+    num_samples = 1000
     delta = 0.1
     tau = 0.1
     max_squeezing = 3
@@ -331,16 +332,20 @@ def create_histograms_by_parameter(data_list: list[SymplecticEstimationPlotData]
 
     return figures
 
+def title2name(title: str) -> str:
+    return str.replace(title, '/', '')
 
 if __name__ == "__main__":
-    # symplectic_data = make_symplectic_data()
-    # pickle.dump(symplectic_data, open("symplectic_data.pickle", "wb"))
+    symplectic_data = make_symplectic_data()
+    pickle.dump(symplectic_data, open("symplectic_data.pickle", "wb"))
 
-    symplectic_data: list[SymplecticEstimationPlotData] = pickle.load(open("symplectic_data.pickle", "rb"))
+    # symplectic_data: list[SymplecticEstimationPlotData] = pickle.load(open("symplectic_data.pickle", "rb"))
     figs = create_histograms_by_parameter(symplectic_data, ['squeezing', 'N'])
     for fig in figs:
+        tikzplotly.save(f'plots/{title2name(fig.layout.title.text)}.tikz', fig)
         fig.show()
 
     figs = create_histograms_by_parameter(symplectic_data, ['kind', 'N'])
     for fig in figs:
+        tikzplotly.save(f'plots/{title2name(fig.layout.title.text)}.tikz', fig)
         fig.show()
