@@ -157,6 +157,14 @@ def get_samples_symplectic(kind: str, m: int, z: float, delta: float, tau: float
     else:
         raise ValueError("kind must be 'shared' or 'symmetric'")
 
+def get_err_symplectic(kind: str, m: int, z: float, delta: float, N: int, eta: float):
+    if kind == 'shared':
+        return np.sqrt(324 * m * (z**6) * ( np.sqrt(2 * m) + np.sqrt(2 * np.log(2*m / delta)) )**2 / ( eta**2 * N ))
+    elif kind == 'symmetric':
+        return np.sqrt(81 * (z**6) * ( 2*np.sqrt(2*m) + np.sqrt(2*np.log(1 / delta)) )**2 / ( 2 * eta**2 * N ))
+    else:
+        raise ValueError("kind must be 'shared' or 'symmetric'")
+
 @dataclass
 class UnitedSamples:
     Ns: float
@@ -169,15 +177,22 @@ def get_samples_united(m: int, z: float, nu: float, eta: float, eps_S: float, ep
 
 
 
-def get_symplectic_estimation_errors(kind: str,  num_modes: int, max_squeezing: float, num_samples: int, delta: float, tau: float, eta: float):
+def get_symplectic_estimation_errors(kind: str, num_modes: int, max_squeezing: float, num_samples: int,
+                                     delta: float, tau: float | None, N: int | None, eta: float):
+    assert( ( tau is None ) != ( N is None ) )
+
+    if tau is not None:
+        N = get_samples_symplectic(kind, num_modes, max_squeezing, delta, tau, eta)
+        N = int(np.ceil(N))
+    if N is not None:
+        tau = get_err_symplectic(kind, num_modes, max_squeezing, delta, N, eta)
+
     errs = []
-    N = get_samples_symplectic(kind, num_modes, max_squeezing, delta, tau, eta)
-    N = int(np.ceil(N))
     for i in range(num_samples):
         U = random_unitary(num_modes, 10, max_squeezing)
         est_S = estimate_symplectic(U, N, eta, kind=kind)
         errs.append(np.linalg.norm(U.S - est_S, ord=2))
-    return N, np.asarray(errs)
+    return N, tau, np.asarray(errs)
 
 
 def get_united_estimation_errors(num_modes: int, max_S_squeezing: float, num_samples: int, eps_S: float, eps_r: float, delta: float, nu: float, eta: float):
@@ -213,32 +228,30 @@ def get_err_rate(d: SymplecticEstimationPlotData):
     return np.mean(d.errs > d.tau)
 
 
-def make_symplectic_data() -> list[SymplecticEstimationPlotData]:
-    eta = 100
-    num_modes = 2
+def make_symplectic_data(range_modes, range_queries) -> list[SymplecticEstimationPlotData]:
+    eta = 1000
     num_samples = 1000
     delta = 0.1
-    tau = 0.1
-    max_squeezing = 3
-    squeezing_step = 0.5
+    sq = 3
 
     ret = []
     for kind in ['symmetric', 'shared']:
-        for sq in np.arange(1, max_squeezing, squeezing_step):
-            N, errs = get_symplectic_estimation_errors(kind, num_modes, sq, num_samples, delta, tau, eta)
-            d = SymplecticEstimationPlotData(
-                kind=kind,
-                eta=eta,
-                num_modes=num_modes,
-                delta=delta,
-                tau=tau,
-                squeezing=sq,
-                N = N,
-                errs = errs,
-            )
-            err_rate = get_err_rate(d)
-            print(f'Kind: {kind}\t N: {N}\t err rate: {err_rate}')
-            ret.append(d)
+        for m in range_modes:
+            for N in range_queries:
+                N, tau, errs = get_symplectic_estimation_errors(kind, m, sq, num_samples, delta, None, N, eta)
+                d = SymplecticEstimationPlotData(
+                    kind=kind,
+                    eta=eta,
+                    num_modes=m,
+                    delta=delta,
+                    tau=tau,
+                    squeezing=sq,
+                    N = N,
+                    errs = errs,
+                )
+                mean_err = np.mean(errs)
+                print(f'Kind: {kind}\t N: {N}\t tau: {tau:.5f}\t mean_err: {mean_err:.6f}')
+                ret.append(d)
 
     return ret
 
@@ -414,16 +427,5 @@ def title2name(title: str) -> str:
     return str.replace(title, '/', '')
 
 if __name__ == "__main__":
-    symplectic_data = make_symplectic_data()
-    pickle.dump(symplectic_data, open("symplectic_data.pickle", "wb"))
+    symplectic_data = make_symplectic_data(range(2, 10, 2), range(100, 1000, 100))
 
-    # symplectic_data: list[SymplecticEstimationPlotData] = pickle.load(open("symplectic_data.pickle", "rb"))
-    figs = create_histograms_by_parameter(symplectic_data, ['squeezing', 'N'])
-    for fig in figs:
-        tikzplotly.save(f'plots/{title2name(fig.layout.title.text)}.tikz', fig)
-        fig.show()
-
-    figs = create_histograms_by_parameter(symplectic_data, ['kind', 'N'])
-    for fig in figs:
-        tikzplotly.save(f'plots/{title2name(fig.layout.title.text)}.tikz', fig)
-        fig.show()
