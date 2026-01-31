@@ -4,6 +4,8 @@ import numpy as np
 import scipy as sc
 from scipy.linalg import block_diag
 import pickle
+import plotly.graph_objects as go
+from collections import defaultdict
 
 from gaussian import (
     GaussianState,
@@ -189,11 +191,11 @@ def make_symplectic_data() -> list[SymplecticEstimationPlotData]:
     delta = 0.1
     tau = 0.1
     max_squeezing = 3
-    squeezing_steps = 3
+    squeezing_step = 0.5
 
     ret = []
     for kind in ['symmetric', 'shared']:
-        for sq in np.arange(1, max_squeezing, max_squeezing / squeezing_steps):
+        for sq in np.arange(1, max_squeezing, squeezing_step):
             N, errs = get_symplectic_estimation_errors(kind, num_modes, sq, num_samples, delta, tau, eta)
             d = SymplecticEstimationPlotData(
                 kind=kind,
@@ -212,6 +214,133 @@ def make_symplectic_data() -> list[SymplecticEstimationPlotData]:
     return ret
 
 
+# Claude wrote this in 30 secs, and it is a bit terrifying
+def create_histograms_by_parameter(data_list: list[SymplecticEstimationPlotData],
+                                   target_params):
+    """
+    Create histograms grouped by unique combinations of parameters (except target_params),
+    with stacked semitransparent histograms for each unique combination of target_params values.
+
+    Parameters:
+    -----------
+    data_list : List[SymplecticEstimationPlotData]
+        List of data objects to visualize
+    target_params : str or List[str]
+        The parameter(s) to vary in each histogram (e.g., 'kind', ['kind', 'squeezing'], etc.)
+        If a single string is provided, it will be converted to a list.
+
+    Returns:
+    --------
+    List of plotly Figure objects
+    """
+    # All possible parameters
+    all_params = ['kind', 'eta', 'num_modes', 'delta', 'tau', 'squeezing', 'N']
+
+    # Convert single string to list
+    if isinstance(target_params, str):
+        target_params = [target_params]
+
+    # Validate target parameters
+    for param in target_params:
+        if param not in all_params:
+            raise ValueError(f"Each target parameter must be one of {all_params}, got '{param}'")
+
+    # Get grouping parameters (all except targets)
+    grouping_params = [p for p in all_params if p not in target_params]
+
+    # Group data by all parameters except target_params
+    groups = defaultdict(list)
+
+    for data in data_list:
+        # Create key from all parameters except targets
+        key = tuple(getattr(data, param) for param in grouping_params)
+        groups[key].append(data)
+
+    # Create figures for each group
+    figures = []
+
+    # Color palette
+    colors = ['rgba(255, 99, 71, 0.5)', 'rgba(30, 144, 255, 0.5)',
+              'rgba(50, 205, 50, 0.5)', 'rgba(255, 215, 0, 0.5)',
+              'rgba(138, 43, 226, 0.5)', 'rgba(255, 140, 0, 0.5)',
+              'rgba(220, 20, 60, 0.5)', 'rgba(65, 105, 225, 0.5)',
+              'rgba(255, 182, 193, 0.5)', 'rgba(144, 238, 144, 0.5)',
+              'rgba(173, 216, 230, 0.5)', 'rgba(255, 218, 185, 0.5)']
+
+    for key, group_data in groups.items():
+        # Create figure
+        fig = go.Figure()
+
+        # Add histogram for each unique combination of target parameter values
+        for idx, data in enumerate(group_data):
+            # Get all target values
+            target_values = [getattr(data, param) for param in target_params]
+
+            # Build label from target parameters
+            label_parts = []
+            for param, value in zip(target_params, target_values):
+                if isinstance(value, float):
+                    label_parts.append(f'{param}={value:.3f}')
+                else:
+                    label_parts.append(f'{param}={value}')
+            label = ', '.join(label_parts)
+
+            fig.add_trace(go.Histogram(
+                x=data.errs,
+                name=label,
+                opacity=0.85,
+                marker_color=colors[idx % len(colors)],
+                nbinsx=50
+            ))
+
+        # Build subtitle with grouping parameter values
+        param_dict = dict(zip(grouping_params, key))
+        subtitle_parts = []
+        for param in grouping_params:
+            value = param_dict[param]
+            if isinstance(value, float):
+                subtitle_parts.append(f'{param}={value:.3f}')
+            else:
+                subtitle_parts.append(f'{param}={value}')
+        subtitle = ', '.join(subtitle_parts) if subtitle_parts else 'All data'
+
+        # Build title
+        if len(target_params) == 1:
+            title_text = f'Error Distribution by {target_params[0].capitalize()}'
+        else:
+            title_text = f'Error Distribution by {", ".join(p.capitalize() for p in target_params)}'
+
+        # Update layout
+        fig.update_layout(
+            title=f'{title_text}<br><sub>{subtitle}</sub>',
+            xaxis_title='Error',
+            yaxis_title='Count',
+            barmode='overlay',
+            template='plotly_white',
+            # width=900,
+            # height=600,
+            legend=dict(
+                yanchor="top",
+                y=0.99,
+                xanchor="right",
+                x=0.99
+            )
+        )
+
+        figures.append(fig)
+
+    return figures
+
+
 if __name__ == "__main__":
-    symplectic_data = make_symplectic_data()
-    pickle.dump(symplectic_data, open("symplectic_data.pickle", "wb"))
+    # symplectic_data = make_symplectic_data()
+    # pickle.dump(symplectic_data, open("symplectic_data.pickle", "wb"))
+
+    symplectic_data: list[SymplecticEstimationPlotData] = pickle.load(open("symplectic_data.pickle", "rb"))
+    figs = create_histograms_by_parameter(symplectic_data, ['squeezing', 'N'])
+    for fig in figs:
+        fig.show()
+
+    figs = create_histograms_by_parameter(symplectic_data, ['kind', 'N'])
+    for fig in figs:
+        fig.show()
