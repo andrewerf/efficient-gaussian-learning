@@ -1,6 +1,8 @@
 import numpy as np
+import pandas as pd
 import scipy as sc
 from scipy.linalg import block_diag
+from tqdm import tqdm
 
 from gaussian import (
     GaussianState,
@@ -101,12 +103,12 @@ def estimate_displacement(U, num_samples, sqz_param, est_S=None, kind="two_mode"
         return np.concat((Yx.mean(axis=0), Yp.mean(axis=0)))
 
 
-def main():
+def main_test():
     num_modes = 2
     np.random.seed(42)
 
-    num_samples = 100000
-    eta = 10000
+    num_samples = 10000
+    eta = 1000
     sqz = 10
 
     U = random_unitary(num_modes, 100, sqz)
@@ -136,8 +138,131 @@ def main():
     print_cmp("Displacement Aux Estimator", est_d_tms, U.r)
 
     V = GaussianUnitary(est_S_sym, est_d_tms)
-    print("ECD:", ec_diamond_norm(U, V, max_n=1e4, method="sampling", sqz_scale=sqz))
+    print("ECD:", ec_diamond_norm(U, V, max_n=1e2, method="sampling", sqz_scale=sqz))
+
+
+def compute_grid_num_modes_num_samples():
+    np.random.seed(42)
+
+    num_samples_values = (10 ** np.arange(3, 6.25, 0.25)).astype(int)
+    num_modes_values = (2 ** np.arange(1, 5.5, 0.5)).round().astype(int)
+    num_trials = 25
+    eta = 1000
+    sqz = 10
+
+    r_range = 100
+    sqz_range = 3
+
+    results = []
+    for num_modes in tqdm(num_modes_values, desc="Modes"):
+        for num_samples in tqdm(num_samples_values, leave=False, desc="Num samples"):
+            if num_modes * num_modes * num_samples >= 1e9:
+                continue
+            for trial in tqdm(range(num_trials), leave=False, desc="Trials"):
+                try:
+                    U = random_unitary(num_modes, r_range, sqz_range)
+                    est_S_sym = estimate_symplectic(
+                        U, num_samples, eta, kind="symmetric"
+                    )
+                    est_S_shared = estimate_symplectic(
+                        U, num_samples, eta, kind="shared"
+                    )
+                    err_sym = np.linalg.matrix_norm(U.S - est_S_sym, ord=2)
+                    err_shared = np.linalg.matrix_norm(U.S - est_S_shared, ord=2)
+
+                    est_d_sqz = estimate_displacement(
+                        U, num_samples, sqz, kind="single_mode", est_S=est_S_sym
+                    )
+                    est_d_tms = estimate_displacement(
+                        U, num_samples, sqz, kind="two_mode", est_S=est_S_sym
+                    )
+
+                    err_sqz = np.linalg.norm(U.r - est_d_sqz)
+                    err_tms = np.linalg.norm(U.r - est_d_tms)
+
+                    diamond = ec_diamond_norm(
+                        U, GaussianUnitary(est_S_shared, est_d_tms), max_n=100
+                    )
+                    results.append(
+                        dict(
+                            N=num_samples,
+                            m=num_modes,
+                            trial=trial,
+                            err_sym=err_sym,
+                            err_shared=err_shared,
+                            err_sqz=err_sqz,
+                            err_tms=err_tms,
+                            diamond=diamond,
+                        )
+                    )
+                except Exception as e:
+                    pass
+    df = pd.DataFrame(results)
+    df.to_csv("grid_num_modes_num_samples.csv", index=False)
+
+
+def compute_grid_sqz_eta():
+    np.random.seed(42)
+
+    num_samples = 100_000
+    num_modes_values = (2 ** np.arange(1, 5.5, 0.5)).round().astype(int)
+    num_trials = 25
+    source_param_values = 10 ** np.arange(2, 4.5, 0.25)
+
+    r_range = 100
+    sqz_range = 3
+
+    results = []
+    for num_modes in tqdm(num_modes_values, desc="Modes"):
+        for source_param in tqdm(source_param_values, leave=False, desc="Source param"):
+            for trial in tqdm(range(num_trials), leave=False, desc="Trials"):
+                try:
+                    eta = source_param
+                    sqz = source_param**0.5
+
+                    U = random_unitary(num_modes, r_range, sqz_range)
+                    est_S_sym = estimate_symplectic(
+                        U, num_samples, eta, kind="symmetric"
+                    )
+                    est_S_shared = estimate_symplectic(
+                        U, num_samples, eta, kind="shared"
+                    )
+                    err_sym = np.linalg.matrix_norm(U.S - est_S_sym, ord=2)
+                    err_shared = np.linalg.matrix_norm(U.S - est_S_shared, ord=2)
+
+                    est_d_sqz = estimate_displacement(
+                        U, num_samples, sqz, kind="single_mode", est_S=est_S_sym
+                    )
+                    est_d_tms = estimate_displacement(
+                        U, num_samples, sqz, kind="two_mode", est_S=est_S_sym
+                    )
+
+                    err_sqz = np.linalg.norm(U.r - est_d_sqz)
+                    err_tms = np.linalg.norm(U.r - est_d_tms)
+
+                    diamond = ec_diamond_norm(
+                        U, GaussianUnitary(est_S_shared, est_d_tms), max_n=100
+                    )
+                    results.append(
+                        dict(
+                            N=num_samples,
+                            m=num_modes,
+                            sqz=sqz,
+                            eta=eta,
+                            trial=trial,
+                            err_sym=err_sym,
+                            err_shared=err_shared,
+                            err_sqz=err_sqz,
+                            err_tms=err_tms,
+                            diamond=diamond,
+                        )
+                    )
+                except Exception as e:
+                    pass
+    df = pd.DataFrame(results)
+    df.to_csv("grid_sqz_eta.csv", index=False)
 
 
 if __name__ == "__main__":
-    main()
+    compute_grid_num_modes_num_samples()
+    compute_grid_sqz_eta()

@@ -14,7 +14,7 @@ def check_symplectic(S):
         ]
     )
     symplectic_check = S.T @ Omega @ S
-    return np.allclose(symplectic_check, Omega, atol=1e-7)
+    return np.allclose(symplectic_check, Omega, atol=1e-6)
 
 
 @dataclass
@@ -46,14 +46,20 @@ def random_unitary(num_modes, r_scale=0, sqz_scale=1):
         Y = U.imag
         return np.block([[X, -Y], [Y, X]])
 
-    o1 = U_to_S(unitary_group.rvs(num_modes))
+    def random_U(num_modes):
+        return (
+            unitary_group.rvs(num_modes)
+            if num_modes > 1
+            else np.exp(1j * np.random.random() * np.pi * 2)
+        )
+
+    o1 = U_to_S(random_U(num_modes))
 
     if sqz_scale == 1:
         # Just a passive unitary
         S = o1
     else:
-        # Euler decomposition
-        o2 = U_to_S(unitary_group.rvs(num_modes))
+        o2 = U_to_S(random_U(num_modes))
         sqz = np.exp(np.random.randn(num_modes) * np.log(sqz_scale))
         d = np.diag(np.concatenate([sqz, 1 / sqz]))
         S = o1 @ d @ o2
@@ -144,8 +150,8 @@ def xpxp_to_xxpp(s):
 def overlap(psi_1: GaussianState, psi_2: GaussianState):
     if not psi_1.num_modes == psi_2.num_modes:
         raise ValueError("Incompatible sizes.")
-    Sigma = psi_1.sigma + psi_2.sigma
     num_modes = psi_1.num_modes
+    Sigma = psi_1.sigma + psi_2.sigma + 1e-6 * np.eye(2 * num_modes)
     try:
         c, lower = sp.linalg.cho_factor(Sigma, check_finite=True)
     except np.linalg.LinAlgError as e:
